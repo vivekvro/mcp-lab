@@ -14,7 +14,6 @@ from os import getenv
 mcp = FastMCP(name="UserExpenseRecords")
 
 logging.basicConfig(
-    filename="expense.log",
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 
