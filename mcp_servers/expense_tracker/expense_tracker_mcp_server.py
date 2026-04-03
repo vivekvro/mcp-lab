@@ -219,6 +219,7 @@ def get_expenses_by_date_range_and_category(category: str, start: str, end: str)
 
 
 
-if __name__=="__main__":
-    mcp.run()
+
+if __name__ == "__main__":
+    mcp.run(transport="http",host="0.0.0.0",port=80001)
 
