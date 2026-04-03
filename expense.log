@@ -1,0 +1,15 @@
+2026-04-03 14:40:22,381 - INFO - Processing request of type ListResourceTemplatesRequest
+2026-04-03 14:40:33,119 - INFO - Processing request of type ListToolsRequest
+2026-04-03 14:40:41,630 - INFO - Processing request of type ListToolsRequest
+2026-04-03 14:40:51,198 - INFO - Processing request of type CallToolRequest
+2026-04-03 14:40:51,213 - ERROR - Error while fetching Records : no such table: ExpenseRecord
+2026-04-03 14:41:30,759 - INFO - Processing request of type CallToolRequest
+2026-04-03 14:41:30,761 - ERROR - Error while fetching Records : no such table: ExpenseRecord
+2026-04-03 14:46:15,560 - INFO - Processing request of type CallToolRequest
+2026-04-03 14:46:15,563 - ERROR - Error while fetching Records : no such table: ExpenseRecord
+2026-04-03 14:47:32,483 - INFO - Processing request of type CallToolRequest
+2026-04-03 14:47:32,485 - INFO - TABLE 'ExpenseRecord' CREATED
+2026-04-03 14:47:47,056 - INFO - Processing request of type CallToolRequest
+2026-04-03 14:47:47,063 - INFO - Fetched all expense records (1 rows)
+2026-04-03 14:48:56,701 - INFO - Processing request of type CallToolRequest
+2026-04-03 14:48:56,706 - INFO - Fetched records for category 'food' between 2026-04-03 and 2026-04-03
