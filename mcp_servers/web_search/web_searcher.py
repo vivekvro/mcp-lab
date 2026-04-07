@@ -19,14 +19,21 @@ summarizer_llm = ChatGroq(model="llama-3.1-8b-instant",temperature=0.723)
 mcp = FastMCP(name="web_search")
 
 
-
-async def load_content(url):
+async def web_load_core(url):
     try:
         loader = WebBaseLoader(url,requests_kwargs={"headers": {"User-Agent": "Mozilla/5.0"}})
         docs = await loader.aload()
-        return docs[0].page_content[:1500]
+        return docs[0].page_content[:1800]
     except:
         return "failed to load content"
+
+@mcp.tool()
+async def web_load(url):
+    """this tool loads web page's content.
+    args:
+    - url(string): url of the web page
+    """
+    return await web_load_core(url)
 
 async def summarize_webpage(query:str,web_content):
     prompt = f"""Your work is to summarize given web page's content on basis of given user query:
@@ -40,14 +47,37 @@ async def summarize_webpage(query:str,web_content):
     result = await summarizer_llm.ainvoke(prompt)
     return result.content
 
-
-async def summarize(query:str,summaries:list[str]):
-    summaries_text = "\n\n".join([s for s in summaries if s])
-    prompt = f""" Your work is to create a final Summary with all summaries of web pages for the user query:
-    user query - {query}
-
-    summaries - {summaries_text}
+@mcp.tool()
+async def summarizer(query:str,summaries):
     """
+        Summarizes the given content based on the user's query.
+
+        Args:
+            query (str): User's query.
+            summaries (str | list[str]): Input text or list of text chunks.
+
+        Returns:
+            str: Final summarized output.
+    """
+    if isinstance(summaries,list):
+        summaries_text = "\n\n".join([s for s in summaries if s])
+    else :
+        summaries_text = str(summaries)
+
+    prompt = f"""
+                Create a final answer based on multiple web summaries.
+
+                User Query: {query}
+
+                Summaries:
+                {summaries_text}
+
+                Rules:
+                - Combine information intelligently
+                - Remove duplicates
+                - Keep it concise
+                - Answer directly
+            """
 
     result = await summarizer_llm.ainvoke(prompt)
     return result.content
@@ -57,7 +87,7 @@ semaphore = asyncio.Semaphore(3)
 
 async def process_url(query:str,url):
     async with semaphore :
-        content = await load_content(url)
+        content = await web_load_core(url)
         if content=="failed to load content":
             return None
         return await summarize_webpage(query,content)
@@ -79,7 +109,7 @@ async def web_search(query:str="No query given"):
     try:
         urls = await asyncio.to_thread(get_title_and_urls)
         summaries = await asyncio.gather(*[process_url(query,url['url']) for url in urls])
-        return await summarize(query,summaries)
+        return await summarizer(query,summaries)
     except Exception as e:
         return str(e)
 
