@@ -2,22 +2,65 @@ from langchain_groq import chat_models
 from duckduckgo_search import DDGS
 from langchain_core.messages import ToolMessage
 from langchain_community.document_loaders import WebBaseLoader
+from langchain_groq  import ChatGroq
+
 from fastmcp import FastMCP
 import asyncio
 import random
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+
+summarizer_llm = ChatGroq(model="llama-3.1-8b-instant",temperature=0.723)
+
+
 mcp = FastMCP(name="web_search")
-def get_random_proxy():
-    proxies = [
-        "http://ip1:port",
-        "http://ip2:port",
-        "http://ip3:port"
-    ]
-    return random.choice(proxies)
+
+
 
 async def load_content(url):
-    loader = WebBaseLoader(url,requests_kwargs={"headers": {"User-Agent": "Mozilla/5.0"}})
-    docs = loader.load()
-    return docs[0].page_content[:2000]
+    try:
+        loader = WebBaseLoader(url,requests_kwargs={"headers": {"User-Agent": "Mozilla/5.0"}})
+        docs = await loader.aload()
+        return docs[0].page_content[:1500]
+    except:
+        return "failed to load content"
+
+async def summarize_webpage(query:str,web_content):
+    prompt = f"""Your work is to summarize given web page's content on basis of given user query:
+    user query : {query}
+    --------------------------------
+    web page content: {web_content}
+    --------------------------------
+    summary should be in less words as possible
+    """
+
+    result = await summarizer_llm.ainvoke(prompt)
+    return result.content
+
+
+async def summarize(query:str,summaries:list[str]):
+    summaries_text = "\n\n".join([s for s in summaries if s])
+    prompt = f""" Your work is to create a final Summary with all summaries of web pages for the user query:
+    user query - {query}
+
+    summaries - {summaries_text}
+    """
+
+    result = await summarizer_llm.ainvoke(prompt)
+    return result.content
+
+
+semaphore = asyncio.Semaphore(3)
+
+async def process_url(query:str,url):
+    async with semaphore :
+        content = await load_content(url)
+        if content=="failed to load content":
+            return None
+        return await summarize_webpage(query,content)
 
 
 @mcp.tool()
@@ -34,12 +77,14 @@ async def web_search(query:str="No query given"):
         return formatted
 
     try:
-        title_n_urls = await asyncio.to_thread(get_title_and_urls)
+        urls = await asyncio.to_thread(get_title_and_urls)
+        summaries = await asyncio.gather(*[process_url(query,url['url']) for url in urls])
+        return await summarize(query,summaries)
     except Exception as e:
-        return e
+        return str(e)
 
 
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="http",host="0.0.0.0",port=8002)
