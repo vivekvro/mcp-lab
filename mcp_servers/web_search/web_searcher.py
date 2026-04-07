@@ -8,12 +8,13 @@ from fastmcp import FastMCP
 import asyncio
 import random
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
+key = os.getenv("GROQ_API_KEY")
 
-
-summarizer_llm = ChatGroq(model="llama-3.1-8b-instant",temperature=0.723)
+summarizer_llm = ChatGroq(model="llama-3.1-8b-instant",temperature=0.723,api_key=key)
 
 
 mcp = FastMCP(name="web_search")
