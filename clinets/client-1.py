@@ -1,16 +1,23 @@
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_groq import ChatGroq
-from langchain_core.messages import ToolMessage,HumanMessage,SystemMessage
-from  dotenv import load_dotenv
-import asyncio
+from langchain_core.messages import ToolMessage,HumanMessage,SystemMessage,BaseMessage
 
-from typing import Annotated,Literal
+from langgraph.graph import StateGraph,START,END
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode,tools_condition
+
+
+import asyncio
+from typing import Annotated,Literal,TypedDict,List
 from pydantic import Field
+from  dotenv import load_dotenv
 import json
+
 load_dotenv()
 
-# model_name = "llama-3.3-70b-versatile"
-# llm = ChatGroq(model=model_name,temperature=0.713)
+model_name = "openai/gpt-oss-120b"
+llm = ChatGroq(model=model_name,temperature=0)
+
 
 
 
@@ -56,20 +63,98 @@ async def dump_cloud_servers(
 
 
 
-async def main():
 
+async def build_graph():
 
-
-
+# State
+    class Chatstate(TypedDict):
+        messages: Annotated[List[BaseMessage],add_messages]
+# tool loading
     SERVERS = await load_servers()
     client = MultiServerMCPClient(SERVERS)
     tools = await client.get_tools()
+    llm_with_tools = llm.bind_tools(tools=tools)
 
-    tools_dict = {}
-    for tool in tools:
-        tools_dict[tool.name] = tool
+    tool_node = ToolNode(tools=tools)
 
-    print(tools_dict)
+
+    # create chat_node
+    async def chat_node(state:Chatstate):
+        prev_msgs = state['messages']
+
+        has_system = any(isinstance(msg, SystemMessage) for msg in prev_msgs)
+        if not has_system:
+            prev_msgs = [
+                    SystemMessage(content="""
+                                You are a helpful AI assistant. Assist users clearly, accurately, and in a polite, friendly tone.
+                                  use tools when needed.
+
+                                Guidelines:
+
+                                * Use tools when necessary.
+                                * Do not call tools if the question can be answered directly.
+                                * Prefer concise and relevant responses.
+
+                                """),
+
+                ] + prev_msgs
+
+        response = await llm_with_tools.ainvoke(prev_msgs)
+        return {"messages":[response]}
+
+    builder_graph = StateGraph(Chatstate)
+
+    builder_graph.add_node("chat_node",chat_node)
+    builder_graph.add_node("tools",tool_node)
+
+    builder_graph.add_edge(START,"chat_node")
+    builder_graph.add_conditional_edges("chat_node",tools_condition,{
+    'tools':"tools", '__end__':END
+    })
+    
+
+    return builder_graph.compile()
+
+
+
+
+
+# main func
+async def main():
+    chatbot = await build_graph()
+
+
+    user_input = str(input("Enter chat:   "))
+    initial_state = {"messages":[HumanMessage(content=user_input)]}
+    result = await chatbot.ainvoke(initial_state)
+
+    print("Ai : ",result['messages'][-1].content)
+
+
+
+
+
+
+
+
+    
+    
+
+
+    
+
+
+
+
+
+
+
+
+
+    # tools_dict = {}
+    # for tool in tools:
+    #     tools_dict[tool.name] = tool
+
 
 
 
