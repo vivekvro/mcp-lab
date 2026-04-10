@@ -2,263 +2,139 @@ import logging
 import sqlite3
 from datetime import datetime
 from fastmcp import FastMCP
-from typing import Annotated,Optional
-from dotenv import load_dotenv
-import os 
-
-import re
-
-
-
+from typing import Optional
 
 mcp = FastMCP(name="UserExpenseRecords")
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
-
 )
 
-table_name = "ExpenseRecord"
+DB_PATH = "expense.db"
+TABLE_NAME = "ExpenseRecord"
 
 
+# ---------- DB INIT ----------
+def create_table():
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {TABLE_NAME}(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT,
+                amount REAL NOT NULL,
+                category TEXT,
+                subcategory TEXT,
+                description TEXT,
+                date TEXT
+            )
+        """)
+        conn.commit()
 
 
+# ---------- UTIL ----------
+def get_current_date():
+    return datetime.now().strftime("%Y-%m-%d")
 
 
-# get current time if not given or failed to retrieve
-
-def get_current_date()->str:
-    date = datetime.now().strftime("%Y-%m-%d")
-    return str(date)
-
-
-
-# get DB path
-
-
-def get_db_path(user_id:str):
-    safe_id = re.sub(r"\W+", "", user_id.lower())
-    if not safe_id:
-        raise ValueError("Invalid user_id after sanitization.")
-    return f"{safe_id}.db"
-
-# create Table if not exist
-
-def create_ExpenseRecord_table(user_id:str):
-    db_path = get_db_path(user_id)
-    try :
-        with sqlite3.connect(db_path) as conn :
-            cur = conn.cursor()
-            cur.execute(f"""
-                        CREATE TABLE IF NOT EXISTS {table_name}(
-
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            amount REAL NOT NULL,
-                            category TEXT,
-                            subcategory TEXT,
-                            description TEXT,
-                            date TEXT
-                        )
-                """)
-            conn.commit()
-        logging.info(f"TABLE '{table_name}' CREATED")
-    except Exception as e:
-        logging.error(f"error : {e}")
-
-
-
-
-
-# Insert Records
-
+# ---------- ADD ----------
 @mcp.tool()
-async def add_expense_records(user_id:str,amount:float,category:str="Unknown",subcategory:str="Unknown",description:str="No description",date:Optional[str]=None):
-    """
-    Add a new expense record to the ExpenseRecord table.
-
-        Args:
-            user_id (str): User ID required to access and manage the user's expense records in the database.
-            amount (float): Expense amount.
-            category (str): Main category (e.g., Food, Travel).
-            subcategory (str): Subcategory of expense.
-            description (str): Optional description of the expense.
-            date (str): Date in YYYY-MM-DD format. Defaults to current date.
-
-        Returns:
-            str: Success or error message.
-        """
+def add_expense_records(
+    user_id: str,
+    amount: float,
+    category: str = "Unknown",
+    subcategory: str = "Unknown",
+    description: str = "No description",
+    date: Optional[str] = None
+):
     if not user_id:
-        raise ValueError("user_id is must!.")
+        raise ValueError("user_id is required")
+
     if date is None:
-        date=get_current_date()
+        date = get_current_date()
 
-    category = category.lower()
-    subcategory = subcategory.lower()
-    givendata = (amount, category, subcategory,description,date)
-    db_path = get_db_path(user_id)
-    try:
-        with sqlite3.connect(db_path) as conn:
-            query = f"""
-                        INSERT INTO {table_name} (amount, category, subcategory,description,date)
-                        VALUES (?,?,?,?,?);
-            """
-            cur = conn.cursor()
-            cur.execute(query,givendata)
-            conn.commit()
-        logging.info(f"Values Inserted In {table_name} Successfully")
-    except sqlite3.OperationalError :
-        try:
-            create_ExpenseRecord_table(user_id)
-            with sqlite3.connect(db_path) as conn:
-                query = f"""
-                            INSERT INTO {table_name} (amount, category, subcategory,description,date)
-                            VALUES (?,?,?,?,?);
-                """
-                cur = conn.cursor()
-                cur.execute(query,givendata)
-                conn.commit()
-        except Exception as e:
-            logging.error(f"Error inserting record: {e}")
+    create_table()
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute(f"""
+            INSERT INTO {TABLE_NAME}
+            (user_id, amount, category, subcategory, description, date)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user_id, amount, category.lower(), subcategory.lower(), description, date))
+        conn.commit()
+
+    return "Expense added successfully"
 
 
-# Get all Expense Records
-
+# ---------- GET ALL ----------
 @mcp.tool()
-def get_all_expenses(user_id:str):
-    """
-    Get all Expense Records from  ExpenseRecord table.
-
-    Args:
-        user_id (str): User ID required to access and manage the user's expense records in the database.
-
-    """
+def get_all_expenses(user_id: str):
     if not user_id:
-        raise ValueError("user_id is must!.")
-    
-    db_path = get_db_path(user_id)
-    try:
-        with sqlite3.connect(db_path) as conn:
-            cur = conn.cursor()
-            cur.execute(f""" SELECT * FROM {table_name} ORDER BY date DESC;""")
-            rows = cur.fetchall()
+        raise ValueError("user_id is required")
 
-        logging.info(f"Fetched all expense records ({len(rows)} rows)")
-        return rows
+    create_table()
 
-    except Exception as e :
-        logging.error(f"Error while fetching Records : {e}")
-        return []
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute(f"""
+            SELECT * FROM {TABLE_NAME}
+            WHERE user_id = ?
+            ORDER BY date DESC
+        """, (user_id,))
+        return cur.fetchall()
 
 
-
-# get expense records by category
-
+# ---------- BY CATEGORY ----------
 @mcp.tool()
-def get_expenses_by_category(user_id:str,category:str):
-    """
-    Get Expense Records from  ExpenseRecord table by category
-    Args:
-        user_id (str): User ID required to access and manage the user's expense records in the database.
-        category (string): category name.
-    """
-    if not user_id:
-        raise ValueError("user_id is must!.")
+def get_expenses_by_category(user_id: str, category: str):
+    create_table()
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute(f"""
+            SELECT * FROM {TABLE_NAME}
+            WHERE user_id = ? AND category = ?
+            ORDER BY date DESC
+        """, (user_id, category.lower()))
+        return cur.fetchall()
 
 
-    db_path = get_db_path(user_id)
-    try:
-        with sqlite3.connect(db_path) as conn:
-            cur = conn.cursor()
-            cur.execute(f"""
-                SELECT * FROM {table_name}
-                WHERE category = ?
-                ORDER BY date DESC
-            """, (category,))
-            rows = cur.fetchall()
-
-        logging.info(f"Fetched expense records ({len(rows)} rows)")
-        return rows
-
-    except Exception as e :
-        logging.error(f"Error while fetching Records : {e}")
-        return []
-
-
-
-# get expense records by date range
-
+# ---------- BY DATE RANGE ----------
 @mcp.tool()
-def get_expenses_by_date_range(user_id:str,start:str,end:str):
-    """
-    Get Expense Records from ExpenseRecord table between two dates.
-    Args:
-        user_id (str): User ID required to access and manage the user's expense records in the database.
-        category(string): category name
-        start(string): format YYYY-MM-DD
-        end(string): format YYYY-MM-DD
-    """
-    if not user_id:
-        raise ValueError("user_id is must!.")
-    
-    try:
-        db_path = get_db_path(user_id)
-        with sqlite3.connect(db_path) as conn:
-            cur = conn.cursor()
-            cur.execute(f"""
-                                SELECT * FROM {table_name} where date BETWEEN ? and ?
-                """,(start,end))
-            rows = cur.fetchall()
+def get_expenses_by_date_range(user_id: str, start: str, end: str):
+    create_table()
 
-        logging.info(f"Fetched Expense Records by dates between %s - %s",start,end)
-        return rows
-
-    except Exception as e :
-        logging.error(f"Error while fetching Records by dates : {e}")
-        return []
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute(f"""
+            SELECT * FROM {TABLE_NAME}
+            WHERE user_id = ? AND date BETWEEN ? AND ?
+        """, (user_id, start, end))
+        return cur.fetchall()
 
 
-
-# get expense records by date range and category
-
+# ---------- BY CATEGORY + DATE ----------
 @mcp.tool()
-def get_expenses_by_date_range_and_category(user_id:str,category: str, start: str, end: str):
-    """
-    Get Expense Records from ExpenseRecord table by category and date range.
+def get_expenses_by_date_range_and_category(
+    user_id: str, category: str, start: str, end: str
+):
+    create_table()
 
-    Args:
-        user_id (str): User ID required to access and manage the user's expense records in the database.
-        category (str): category name
-        start (str): format YYYY-MM-DD
-        end (str): format YYYY-MM-DD
-    """
-    if not user_id:
-        raise ValueError("user_id is must!.")
-    try:
-        db_path = get_db_path(user_id)
-        with sqlite3.connect(db_path) as conn:
-            cur = conn.cursor()
-            cur.execute(f"""
-                SELECT * FROM {table_name}
-                WHERE category = ?
-                AND date BETWEEN ? AND ?
-                ORDER BY date DESC
-            """, (category, start, end))
-
-            rows = cur.fetchall()
-
-        logging.info("Fetched records for category '%s' between %s and %s",
-                    category, start, end)
-        return rows
-
-    except Exception as e:
-        logging.error(f"Error while fetching records: {e}")
-        return []
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute(f"""
+            SELECT * FROM {TABLE_NAME}
+            WHERE user_id = ?
+            AND category = ?
+            AND date BETWEEN ? AND ?
+            ORDER BY date DESC
+        """, (user_id, category.lower(), start, end))
+        return cur.fetchall()
 
 
-
-
-
+# ---------- RUN ----------
 if __name__ == "__main__":
-    mcp.run(transport="http",host="0.0.0.0",port=8001)#transport="http",host="0.0.0.0",port=8001
-
+    create_table()
+    mcp.run(transport="http", host="0.0.0.0", port=8001)
