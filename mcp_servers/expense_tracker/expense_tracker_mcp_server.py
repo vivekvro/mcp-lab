@@ -38,7 +38,6 @@ def get_current_date()->str:
 
 
 def get_db_path(user_id:str):
-    os.makedirs("data",exist_ok=True)
     safe_id = re.sub(r"\W+", "", user_id.lower())
     if not safe_id:
         raise ValueError("Invalid user_id after sanitization.")
