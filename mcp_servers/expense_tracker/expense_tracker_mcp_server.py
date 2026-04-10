@@ -4,9 +4,9 @@ from datetime import datetime
 from fastmcp import FastMCP
 from typing import Annotated,Optional
 from dotenv import load_dotenv
-from os import getenv
+import os 
 
-
+import re
 
 
 
@@ -19,16 +19,35 @@ logging.basicConfig(
 
 )
 
-username=getenv("USERNAME")
-db_path = f"{username}_expense_tracking.db"
 table_name = "ExpenseRecord"
 
 
 
 
+
+
+# get current time if not given or failed to retrieve
+
+def get_current_date()->str:
+    date = datetime.now().strftime("%Y-%m-%d")
+    return str(date)
+
+
+
+# get DB path
+
+
+def get_db_path(user_id:str):
+    os.makedirs("data",exist_ok=True)
+    safe_id = re.sub(r"\W+", "", user_id.lower())
+    if not safe_id:
+        raise ValueError("Invalid user_id after sanitization.")
+    return f"data/{safe_id}.db"
+
 # create Table if not exist
 
-def create_ExpenseRecord_table():
+def create_ExpenseRecord_table(user_id:str):
+    db_path = get_db_path(user_id)
     try :
         with sqlite3.connect(db_path) as conn :
             cur = conn.cursor()
@@ -50,21 +69,17 @@ def create_ExpenseRecord_table():
 
 
 
-# get current time if not given or failed to retrieve
-
-def get_current_date()->str:
-    date = datetime.now().strftime("%Y-%m-%d")
-    return str(date)
 
 
 # Insert Records
 
 @mcp.tool()
-def add_expense_records(amount:float,category:str="Unknown",subcategory:str="Unknown",description:str="No description",date:Optional[str]=None):
+async def add_expense_records(user_id:str,amount:float,category:str="Unknown",subcategory:str="Unknown",description:str="No description",date:Optional[str]=None):
     """
     Add a new expense record to the ExpenseRecord table.
 
         Args:
+            user_id (str): User ID required to access and manage the user's expense records in the database.
             amount (float): Expense amount.
             category (str): Main category (e.g., Food, Travel).
             subcategory (str): Subcategory of expense.
@@ -74,12 +89,15 @@ def add_expense_records(amount:float,category:str="Unknown",subcategory:str="Unk
         Returns:
             str: Success or error message.
         """
+    if not user_id:
+        raise ValueError("user_id is must!.")
     if date is None:
         date=get_current_date()
 
     category = category.lower()
     subcategory = subcategory.lower()
     givendata = (amount, category, subcategory,description,date)
+    db_path = get_db_path(user_id)
     try:
         with sqlite3.connect(db_path) as conn:
             query = f"""
@@ -92,7 +110,7 @@ def add_expense_records(amount:float,category:str="Unknown",subcategory:str="Unk
         logging.info(f"Values Inserted In {table_name} Successfully")
     except sqlite3.OperationalError :
         try:
-            create_ExpenseRecord_table()
+            create_ExpenseRecord_table(user_id)
             with sqlite3.connect(db_path) as conn:
                 query = f"""
                             INSERT INTO {table_name} (amount, category, subcategory,description,date)
@@ -108,10 +126,18 @@ def add_expense_records(amount:float,category:str="Unknown",subcategory:str="Unk
 # Get all Expense Records
 
 @mcp.tool()
-def get_all_expenses():
+def get_all_expenses(user_id:str):
     """
-    Get all Expense Records from  ExpenseRecord table
+    Get all Expense Records from  ExpenseRecord table.
+
+    Args:
+        user_id (str): User ID required to access and manage the user's expense records in the database.
+
     """
+    if not user_id:
+        raise ValueError("user_id is must!.")
+    
+    db_path = get_db_path(user_id)
     try:
         with sqlite3.connect(db_path) as conn:
             cur = conn.cursor()
@@ -130,12 +156,18 @@ def get_all_expenses():
 # get expense records by category
 
 @mcp.tool()
-def get_expenses_by_category(category:str):
+def get_expenses_by_category(user_id:str,category:str):
     """
     Get Expense Records from  ExpenseRecord table by category
     Args:
+        user_id (str): User ID required to access and manage the user's expense records in the database.
         category (string): category name.
     """
+    if not user_id:
+        raise ValueError("user_id is must!.")
+
+
+    db_path = get_db_path(user_id)
     try:
         with sqlite3.connect(db_path) as conn:
             cur = conn.cursor()
@@ -158,15 +190,20 @@ def get_expenses_by_category(category:str):
 # get expense records by date range
 
 @mcp.tool()
-def get_expenses_by_date_range(start:str,end:str):
+def get_expenses_by_date_range(user_id:str,start:str,end:str):
     """
     Get Expense Records from ExpenseRecord table between two dates.
     Args:
-    category(string): category name
+        user_id (str): User ID required to access and manage the user's expense records in the database.
+        category(string): category name
         start(string): format YYYY-MM-DD
         end(string): format YYYY-MM-DD
     """
+    if not user_id:
+        raise ValueError("user_id is must!.")
+    
     try:
+        db_path = get_db_path(user_id)
         with sqlite3.connect(db_path) as conn:
             cur = conn.cursor()
             cur.execute(f"""
@@ -186,16 +223,20 @@ def get_expenses_by_date_range(start:str,end:str):
 # get expense records by date range and category
 
 @mcp.tool()
-def get_expenses_by_date_range_and_category(category: str, start: str, end: str):
+def get_expenses_by_date_range_and_category(user_id:str,category: str, start: str, end: str):
     """
     Get Expense Records from ExpenseRecord table by category and date range.
 
     Args:
+        user_id (str): User ID required to access and manage the user's expense records in the database.
         category (str): category name
         start (str): format YYYY-MM-DD
         end (str): format YYYY-MM-DD
     """
+    if not user_id:
+        raise ValueError("user_id is must!.")
     try:
+        db_path = get_db_path(user_id)
         with sqlite3.connect(db_path) as conn:
             cur = conn.cursor()
             cur.execute(f"""
@@ -220,5 +261,5 @@ def get_expenses_by_date_range_and_category(category: str, start: str, end: str)
 
 
 if __name__ == "__main__":
-    mcp.run(transport="http",host="0.0.0.0",port=8001)
+    mcp.run(transport="http",host="0.0.0.0",port=8001)#transport="http",host="0.0.0.0",port=8001
 
