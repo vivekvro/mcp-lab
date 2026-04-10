@@ -11,7 +11,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-DB_PATH = "expense.db"
+DB_PATH = "data/expense.db"
 TABLE_NAME = "ExpenseRecord"
 
 
