@@ -41,7 +41,7 @@ def get_db_path(user_id:str):
     safe_id = re.sub(r"\W+", "", user_id.lower())
     if not safe_id:
         raise ValueError("Invalid user_id after sanitization.")
-    return f"data/{safe_id}.db"
+    return f"{safe_id}.db"
 
 # create Table if not exist
 
