@@ -5,6 +5,7 @@ from langchain_core.messages import ToolMessage,HumanMessage,SystemMessage,BaseM
 from langgraph.graph import StateGraph,START,END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode,tools_condition
+from requests import get
 
 
 import asyncio
@@ -70,9 +71,9 @@ async def build_graph():
     class Chatstate(TypedDict):
         messages: Annotated[List[BaseMessage],add_messages]
 # tool loading
-    SERVERS = await load_servers()
-    client = MultiServerMCPClient(SERVERS)
-    tools = await client.get_tools()
+    url ="http://127.0.0.1:8000/tools"
+    response = get(url)
+    tools =  response.json()
     llm_with_tools = llm.bind_tools(tools=tools)
 
     tool_node = ToolNode(tools=tools)
