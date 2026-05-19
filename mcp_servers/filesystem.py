@@ -1,52 +1,144 @@
 import os, asyncio
 from pathlib import Path
-from pydantic import Field,BaseModel
+from pydantic import field_validator,Field,BaseModel,model_validator
 from typing import Annotated
 from langchain.tools import tool
 
 
 
+class PathInput(BaseModel):
+    path: str
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value):
+
+        path = Path(value)
+
+        if not path.exists():
+            raise ValueError("Path does not exist")
+
+        return value
+
+
 # ----------------- list directories---------------------------------
 @tool
-async def list_folders(folder_path:str)->list[Path]:
-    """Retrieve all subdirectories from the specified filesystem path.
+async def list_folders(path_input:PathInput)->list[Path]:
+    """
+    Retrieve all subdirectories located inside the specified directory path.
 
-    Use this tool when you need to explore folder structures,
-    navigate project directories, or inspect available subfolders.
+    This tool is useful for filesystem exploration, repository
+    navigation, project structure analysis, and agent-based
+    directory traversal workflows.
+
+    The provided path is validated using the PathInput schema
+    before accessing the filesystem.
 
     Args:
-        folder_path: Target directory path.
+        path_input: Validated path input containing the target
+        directory location.
+
     Returns:
-        List of subfolder paths located inside the target directory.
+        A list of Path objects representing all immediate
+        subdirectories inside the target directory.
+
+    Raises:
+        FileNotFoundError: If the directory does not exist.
+        NotADirectoryError: If the provided path is not a directory.
+        PermissionError: If access to the directory is denied.
+        ValueError: If the path fails validation checks.
     """
-    path = Path(folder_path)
+    path = Path(path_input.path)
     folders = [dir for dir in path.iterdir() if dir.is_dir()]
     return folders
 
 @tool
-async def list_files(folder_path:str)->list[Path]:
+async def list_files(path_input:PathInput)->list[Path]:
     """
-    Retrieve all files from the specified directory path.
+    Retrieve all files located inside the specified directory path.
 
-    Use this tool when you need to inspect available files,
-    browse project contents, or access files inside a folder.
+    This tool is useful for browsing project files, inspecting
+    repository contents, locating readable resources, and
+    supporting agent-based filesystem navigation workflows.
+
+    The provided path is validated using the PathInput schema
+    before accessing the filesystem.
 
     Args:
-        folder_path: Target directory path.
+        path_input: Validated path input containing the target
+        directory location.
 
     Returns:
-        A list of Path objects representing all files
-        inside the provided directory.
+        A list of Path objects representing all immediate
+        files inside the target directory.
 
     Raises:
-        FileNotFoundError: If the given path does not exist.
+        FileNotFoundError: If the provided path does not exist.
+        NotADirectoryError: If the provided path is not a directory.
+        PermissionError: If access to the directory is denied.
+        ValueError: If the path fails validation checks.
+    """
+
+    path = Path(path_input.path)
+    files = [file for file in path.iterdir() if dir.is_file()]
+    return files
+
+
+
+
+@tool
+def tree_directory(path, indent=""):
+    """
+    Recursively generate a tree-style representation of a directory.
+
+    This tool traverses all files and subdirectories starting
+    from the provided root path and returns a formatted string
+    representing the hierarchical filesystem structure.
+
+    Useful for:
+    - Repository mapping
+    - Project structure visualization
+    - Agent-based filesystem navigation
+    - Codebase exploration
+    - Documentation and RAG preprocessing
+
+    The generated output follows a tree-like format similar to:
+    
+    ├── src
+    │   ├── main.py
+    │   ├── utils.py
+    ├── README.md
+
+    Args:
+        path: Root directory path to traverse.
+        indent: Internal indentation used for recursive formatting.
+
+    Returns:
+        A formatted string representing the complete directory tree.
+
+    Raises:
+        FileNotFoundError: If the provided path does not exist.
         NotADirectoryError: If the provided path is not a directory.
         PermissionError: If access to the directory is denied.
     """
 
-    path = Path(folder_path)
-    files = [dir for dir in path.iterdir() if dir.is_file()]
-    return files
+    path = Path(path)
+    tree = ""
+
+    for item in path.iterdir():
+        tree += f"\n{indent}├── {item.name}"
+
+        if item.is_dir():
+            tree += tree_directory(
+                item,
+                indent + "│   "
+            )
+
+    return tree
+
+
+
+
 #------------------------------read files------------------------------------------------
 
 
@@ -90,8 +182,8 @@ def is_safe_file(path: Path) -> bool:
     # Allow only readable text files
     return True
 
-
-async def read_files(file_path:str)->str:
+@tool
+async def read_files(path_input:PathInput)->str:
     """
     Securely read and return the content of a text-based file.
 
@@ -99,25 +191,26 @@ async def read_files(file_path:str)->str:
     dangerous, binary, executable, hidden, oversized, or
     sensitive files to prevent unsafe filesystem access.
 
-    The tool is intended for:
+    Supported use cases include:
     - Source code inspection
-    - Reading configuration files
-    - Viewing documentation or text files
+    - Reading documentation files
     - Parsing structured text formats
+    - Agent-based repository analysis
 
-    Supported readable formats commonly include:
+    Common supported formats:
     .py, .txt, .md, .json, .yaml, .toml, .js, .ts
 
-    Blocked file categories include:
+    Restricted file categories include:
     - Executables and binaries
-    - Environment/secret files
+    - Secret/environment files
     - SSH keys and credentials
-    - Compressed archives
+    - Archives and compressed files
     - Extremely large files
-    - Non-text or unsupported encoded files
+    - Unsupported or non-text files
 
     Args:
-        file_path: Absolute or relative path to the target file.
+        path_input: Validated path input containing the
+        target file location.
 
     Returns:
         The decoded text content of the file.
@@ -126,11 +219,11 @@ async def read_files(file_path:str)->str:
         FileNotFoundError: If the file does not exist.
         PermissionError: If access is denied.
         UnicodeDecodeError: If the file is not readable as text.
-        ValueError: If the file is unsafe or unsupported.
         IsADirectoryError: If the provided path is a directory.
+        ValueError: If the file is unsafe or unsupported.
     """
     try:
-        path = Path(file_path)
+        path = Path(path_input.path)
         if is_safe_file(path):
             with open(path,"r",encoding="utf-8") as f:
                 file_content = f.read()
@@ -158,21 +251,35 @@ async def read_files(file_path:str)->str:
 
 
 
+class FileChunk(PathInput):
+    start_line:int = Field(ge=1)
+    end_line:int = Field(gt=1)
+    @classmethod
+    @model_validator(mode="after")
+    def validate_range(self):
+        if self.end_line <= self.start_line:
+            raise ValueError(
+            "end_line must be greater "
+            "than start_line"
+            )
+        if self.end_line - self.start_line > 500:
+            raise ValueError("chunk too large")
+        return self
 
-def tree_directory(path):
-    # TODO: Generate recursive folder tree structure
-    pass
 
-
-def read_file(path):
-    # TODO: Safely read text file content
-    pass
-
-
-def read_file_chunk(path, start, size):
-    # TODO: Read partial content from large files
-    pass
-
+def read_file_chunk(filechunk: FileChunk)->str:
+    path = Path(filechunk.path)
+    start_line = filechunk.start_line
+    end_line = filechunk.end_line
+    lines = []
+    with open(path,"r",encoding="utf-8") as f:
+        for current,line in enumerate(f,start=1):
+            if current < start_line:
+                continue
+            if current > end_line:
+                break
+            lines.append(line.rstrip())
+    return "\n".join(lines)
 
 def append_file(path, content):
     # TODO: Append content to existing file
@@ -386,7 +493,7 @@ def make_readonly(path):
 
 
 async def main():
-    print_this = await read_files(r"D:\\MCPs\\mcp_servers\\expense_tracker.py")
+    print_this = tree_directory(r"D:\\MCPs")
     print(print_this)
 if __name__=="__main__":
     asyncio.run(main())
