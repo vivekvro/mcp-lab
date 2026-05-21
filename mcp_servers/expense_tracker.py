@@ -1,4 +1,6 @@
-import logging,asyncio # planning for Async this server.
+import logging
+logging.disable(logging.CRITICAL)
+
 import sqlite3
 from datetime import datetime
 from fastmcp import FastMCP
@@ -8,19 +10,13 @@ import sys
 
 mcp_ExpenseTracker = FastMCP(name="Expense_Tracker")
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    stream=sys.stderr
-)
-
 DB_PATH = "data/expense.db" #data\expense.db
 TABLE_NAME = "ExpenseRecord"
 
 
 # ---------- DB INIT ----------
 def create_table():
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH,check_same_thread=False) as conn:
         cur = conn.cursor()
         cur.execute(f"""
             CREATE TABLE IF NOT EXISTS {TABLE_NAME}(
@@ -40,12 +36,6 @@ def create_table():
 def get_current_date():
     return datetime.now().strftime("%Y-%m-%d")
 
-@mcp_ExpenseTracker.tool()
-def get_CurrenDate():
-    """this tool return current date in YYYY-MM-DD format."""
-    return get_current_date()
-
-
 
 # ---------- ADD ----------
 @mcp_ExpenseTracker.tool()
@@ -55,7 +45,7 @@ def add_expense_records(
     subcategory: str,
     description: str,
     date: Optional[str],
-    user_id : str =None
+    user_id : str
 ):
     """Adds a new expense record for a specific user with details such as amount, category, subcategory, description, and date. Automatically assigns the current date if not provided and ensures secure insertion into the database.
 
@@ -75,13 +65,16 @@ Raises:
 
 * ValueError: If user_id is missing in the configuration.
 """
+    create_table()
     if not user_id:
-        raise ValueError("user_id is required")
+        raise ValueError("Provide User ID")
+
+    user_id = user_id.lower().strip()
 
     if date is None:
         date = get_current_date()
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH,check_same_thread=False) as conn:
         cur = conn.cursor()
         cur.execute(f"""
             INSERT INTO {TABLE_NAME}
@@ -90,12 +83,15 @@ Raises:
         """, (user_id, amount, category.lower(), subcategory.lower(), description, date))
         conn.commit()
 
-    return "Expense added successfully"
+        return {
+            "success": True,
+            "message": "Expense added successfully"
+        }
 
 
 # ---------- GET ALL ----------
 @mcp_ExpenseTracker.tool()
-def get_all_expenses(user_id:str=None):
+def get_all_expenses(user_id:str):
     """Fetches all expense records associated with a specific user. Validates the presence of user context and retrieves data in descending order by date for efficient tracking and review.
 
 Args:
@@ -109,9 +105,10 @@ Raises:
 
 * ValueError: If user_id is missing in the configuration.
 """
+    create_table()
     if not user_id:
         raise ValueError("user_id is required")
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, check_same_thread=False) as conn:
         cur = conn.cursor()
         cur.execute(f"""
             SELECT * FROM {TABLE_NAME}
@@ -125,7 +122,7 @@ Raises:
 
 
 @mcp_ExpenseTracker.tool()
-def get_expenses_by_category(category: str,user_id:str=None):
+def get_expenses_by_category(category: str,user_id:str):
     """Fetches user-specific expense records filtered by a given category. Ensures the database table exists before querying and returns results sorted in descending order by date for better readability and analysis.
 
     Arguments:
@@ -137,12 +134,13 @@ def get_expenses_by_category(category: str,user_id:str=None):
 
     * List of expense records matching the specified category.
     """
-    user_id = user_id.lower().strip()
+   
     if user_id is None:
         raise ValueError("Provide User ID")
+    user_id = user_id.lower().strip()
     create_table()
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH,check_same_thread=False) as conn:
         cur = conn.cursor()
         cur.execute(f"""
             SELECT * FROM {TABLE_NAME}
@@ -154,7 +152,7 @@ def get_expenses_by_category(category: str,user_id:str=None):
 
 # ---------- BY DATE RANGE ----------
 @mcp_ExpenseTracker.tool()
-def get_expenses_by_date_range( start_date: str, end_date: str, user_id:str):
+def get_expenses_by_date_range(start_date: str, end_date: str, user_id:str):
     """Fetches user-specific expense records within a specified date range. Executes a secure, parameterized query to ensure data isolation and reliability.
 
 Arguments:
@@ -167,8 +165,10 @@ Returns:
 
 * List of expense records that fall within the given date range.
 """
-
-    with sqlite3.connect(DB_PATH) as conn:
+    if user_id is None:
+        raise ValueError("User_id is required.")
+    create_table()
+    with sqlite3.connect(DB_PATH,check_same_thread=False) as conn:
         cur = conn.cursor()
         cur.execute(f"""
             SELECT * FROM {TABLE_NAME}
@@ -196,8 +196,9 @@ def get_expenses_by_date_range_and_category(
 
         * List of expense records matching the given filters.
         """
+    create_table()
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH,check_same_thread=False) as conn:
         cur = conn.cursor()
         cur.execute(f"""
             SELECT * FROM {TABLE_NAME}
@@ -209,13 +210,6 @@ def get_expenses_by_date_range_and_category(
         return cur.fetchall()
 
 
-# async def main():
-#     tools = await mcp_ExpenseTracker.list_tools()
-#     for tool in tools:
-#         print(dir(tool))
-#         break
-
 # ---------- RUN ----------
 if __name__ == "__main__":
-    create_table()
-    mcp_ExpenseTracker.run()#transport="http", port=8000
+    mcp_ExpenseTracker.run(transport="stdio")#transport="http", port=8000
